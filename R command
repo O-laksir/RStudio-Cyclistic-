@@ -1,0 +1,175 @@
+# librarys
+
+library(readxl)
+
+library(stringr)
+
+library(purrr)
+
+library(readr)
+
+library(lubridate)
+
+library(dplyr)
+
+library(ggplot2)
+
+
+# Load CSV files, concatenate paths, and combine into single dataframe.
+
+data <- list.files(path = "data/new folder/", pattern = ".csv" )
+data <- str_c("data/new folder/", data)
+Rdata <- map_df(data, read_csv)
+
+# Data transformation 
+
+Rdata$started_at <- ymd_hms(Rdata$started_at)
+
+Rdata$started_at_month <- month(Rdata$started_at)
+Rdata$started_at_year <- year(Rdata$started_at)
+Rdata$started_at_hour <- hour(Rdata$started_at)
+
+
+Rdata$duration_in_minutes <- as.numeric(difftime(Rdata$ended_at, Rdata$started_at, units = "mins"))
+
+Rdata$day <- weekdays(Rdata$started_at)
+
+type_counts <- table(Rdata$member_casual)
+
+# remove nobers less then 0 in duration_in_minutes column
+
+Rdata <- Rdata[Rdata$duration_in_minutes >= 0, ]
+summary(Rdata$duration_in_minutes)
+
+
+# Remove missing values from the duration_in_minutes column
+Rdata <- Rdata[!is.na(Rdata$duration_in_minutes), ]
+
+# remove outliers
+
+p1 <- quantile(Rdata$duration_in_minutes, 0.01, na.rm = TRUE)
+p99 <- quantile(Rdata$duration_in_minutes, 0.99, na.rm = TRUE)
+
+Rdata$duration_in_minutes <- pmin(p99, pmax(Rdata$duration_in_minutes, p1))
+
+# Check 
+summary(Rdata$duration_in_minutes)
+
+#count members and casual 
+
+  # Calculate total duration of travel for members and casual users
+  duration_sums <- tapply(Rdata$duration_in_minutes, Rdata$member_casual, sum)
+  
+  # Convert the result to a data frame
+  duration_data <- data.frame(member_type = names(duration_sums), duration_sum = duration_sums)
+  
+  
+  #compare the percentage of members and casula by pie chard
+  # Calculate percentage
+  type_data$percentage <- type_data$count / sum(type_data$count) * 100
+  
+  member_casual <- ggplot(type_data, aes(x = "", y = count, fill = type)) +
+    geom_bar(stat = "identity", width = 1, color = "white") +
+    coord_polar("y") +
+    scale_fill_manual(values = c("red", "blue")) +  # Set colors for members and casual users
+    labs(title = "Distribution of Members and Casual Users") +
+    geom_text(aes(label = paste0(round(percentage), "%")), 
+              position = position_stack(vjust = 0.5), color = "black") +
+    theme_void()
+  
+  print(member_casual)
+
+
+#duration_in_minutes by member_casual  
+# Now, you can run the aggregation and plotting code
+duration_sum <- aggregate(duration_in_minutes ~ member_casual, data = Rdata, FUN = sum)
+
+# Create a bar plot
+ggplot(duration_sum, aes(x = member_casual, y = duration_in_minutes, fill = member_casual)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("member" = "red", "casual" = "blue")) +
+  labs(title = "Total Duration by Rider Type",
+       x = "Rider Type",
+       y = "Total Duration (minutes)")
+
+
+
+
+#count of member and casual by day
+# Count the number of members and casual riders by day
+count_by_day <- Rdata %>%
+  group_by(day, member_casual) %>%
+  summarise(count = n())
+
+# Create the plot
+ggplot(count_by_day, aes(x = day, y = count, fill = member_casual)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = c("member" = "red", "casual" = "blue")) +
+  labs(title = "Count of Members and Casual Riders by Day",
+       x = "Day",
+       y = "Count",
+       fill = "Rider Type") +
+  theme_minimal()
+
+
+
+
+#count of member_casual by month
+
+ggplot(count_by_month, aes(x = factor(started_at_month), y = count, fill = member_casual)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = c("member" = "red", "casual" = "blue")) +
+  labs(title = "Count of Members and Casual Riders by Month",
+       x = "Month",
+       y = "Count",
+       fill = "Rider Type") +
+  scale_x_discrete(labels = c("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")) +
+  theme_minimal()
+
+
+
+#count and member casual by houre 
+# Count the number of members and casual riders by hour
+count_by_hour <- Rdata %>%
+  group_by(started_at_hour, member_casual) %>%
+  summarise(count = n())
+
+# Create the plot
+ggplot(count_by_hour, aes(x = started_at_hour, y = count, fill = member_casual)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = c("member" = "red", "casual" = "blue")) +
+  labs(title = "Count of Members and Casual Riders by Hour",
+       x = "Hour",
+       y = "Count",
+       fill = "Rider Type") +
+  theme_minimal()
+
+
+
+
+
+
+#count start station by only casual then sort Countdown
+
+  # Filter data for casual riders only and remove NA values
+  casual_data <- Rdata %>%
+    filter(member_casual == "casual" & !is.na(start_station_name))
+
+  # Count the occurrences of each start station
+  count_start_station <- casual_data %>%
+    group_by(start_station_name) %>%
+    summarise(count = n()) %>%
+    arrange(desc(count))  # Sort in descending order
+
+  # Select only the top 10 stations
+  top_10_start_stations <- count_start_station %>%
+    top_n(15)
+
+  # Create the plot
+  ggplot(top_10_start_stations, aes(x = reorder(start_station_name, -count), y = count)) +
+    geom_bar(stat = "identity", fill = "blue") +
+    labs(title = "Top 10 Start Stations for Casual Riders",
+        x = "Start Station",
+         y = "Count") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+          axis.title.x = element_blank())
